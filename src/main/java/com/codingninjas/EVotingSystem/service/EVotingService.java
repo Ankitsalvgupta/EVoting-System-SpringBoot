@@ -1,18 +1,21 @@
-package com.codingninjas.EVotingSystem.services;
+package com.codingninjas.EVotingSystem.service;
 
 import java.util.List;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
-import com.codingninjas.EVotingSystem.entities.Election;
-import com.codingninjas.EVotingSystem.entities.ElectionChoice;
-import com.codingninjas.EVotingSystem.entities.User;
-import com.codingninjas.EVotingSystem.entities.Vote;
-import com.codingninjas.EVotingSystem.repositories.ElectionChoiceRepository;
-import com.codingninjas.EVotingSystem.repositories.ElectionRepository;
-import com.codingninjas.EVotingSystem.repositories.UserRepository;
-import com.codingninjas.EVotingSystem.repositories.VoteRepository;
+import com.codingninjas.EVotingSystem.entity.Election;
+import com.codingninjas.EVotingSystem.entity.ElectionChoice;
+import com.codingninjas.EVotingSystem.entity.User;
+import com.codingninjas.EVotingSystem.entity.Vote;
+import com.codingninjas.EVotingSystem.repository.ElectionChoiceRepository;
+import com.codingninjas.EVotingSystem.repository.ElectionRepository;
+import com.codingninjas.EVotingSystem.repository.UserRepository;
+import com.codingninjas.EVotingSystem.repository.VoteRepository;
+import com.codingninjas.EVotingSystem.exception.DuplicateVoteException;
+import com.codingninjas.EVotingSystem.exception.ResourceNotFoundException;
 
 @Service
 public class EVotingService {
@@ -28,10 +31,6 @@ public class EVotingService {
 
     @Autowired
     ElectionChoiceRepository electionChoiceRepository;
-
-    public void addUser(User user) {
-        userRepository.save(user);
-    }
 
     public List<User> getAllUsers() {
         return userRepository.findAll();
@@ -51,6 +50,9 @@ public class EVotingService {
     }
 
     public void addElectionChoice(ElectionChoice electionChoice) {
+        if (electionChoice.getElection() == null) {
+            throw new IllegalArgumentException("election.id is required");
+        }
         long electionId = electionChoice.getElection().getId();
         Election managedElection = electionRepository.findById(electionId)
                 .orElseThrow(() -> new RuntimeException("Election not found with id: " + electionId));
@@ -74,19 +76,32 @@ public class EVotingService {
         return voteRepository.existsByUserIdAndElectionId(userId, electionId);
     }
 
+    public User findUserByName(String name) {
+        return userRepository.findByName(name)
+                .orElseThrow(() -> new RuntimeException("User not found: " + name));
+    }
+
+    @Transactional
     public void addVote(Long userId, Long electionId, Long electionChoiceId) {
         if (AlreadyGivenVote(userId, electionId)) {
-            throw new RuntimeException("You have already given your vote");
+            throw new DuplicateVoteException("You have already voted in this election");
         }
 
         User user = userRepository.findById(userId)
-                .orElseThrow(() -> new RuntimeException("User not found with id: " + userId));
+                .orElseThrow(() -> new ResourceNotFoundException("User not found with id: " + userId));
 
         Election election = electionRepository.findById(electionId)
-                .orElseThrow(() -> new RuntimeException("Election not found with id: " + electionId));
+                .orElseThrow(() -> new ResourceNotFoundException("Election not found with id: " + electionId));
 
         ElectionChoice electionChoice = electionChoiceRepository.findById(electionChoiceId)
-                .orElseThrow(() -> new RuntimeException("ElectionChoice not found with id: " + electionChoiceId));
+                .orElseThrow(() -> new ResourceNotFoundException("ElectionChoice not found with id: " + electionChoiceId));
+
+        // Integrity check: the chosen candidate must belong to the election being voted in
+        if (electionChoice.getElection() == null
+                || electionChoice.getElection().getId() != election.getId()) {
+            throw new IllegalArgumentException(
+                    "Choice " + electionChoiceId + " does not belong to election " + electionId);
+        }
 
         Vote vote = new Vote();
         vote.setUser(user);
@@ -106,6 +121,10 @@ public class EVotingService {
 
     public ElectionChoice findElectionWinner(String electionName) {
         Election election = findElectionByName(electionName);
-        return electionChoiceRepository.findElectionChoiceWithMaxVotes(election.getId());
+        ElectionChoice winner = electionChoiceRepository.findElectionChoiceWithMaxVotes(election.getId());
+        if (winner == null) {
+            throw new ResourceNotFoundException("No votes have been cast yet in election: " + electionName);
+        }
+        return winner;
     }
 }

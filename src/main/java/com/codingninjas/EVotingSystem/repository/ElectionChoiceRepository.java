@@ -1,9 +1,9 @@
-package com.codingninjas.EVotingSystem.repositories;
+package com.codingninjas.EVotingSystem.repository;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
-import com.codingninjas.EVotingSystem.entities.ElectionChoice;
+import com.codingninjas.EVotingSystem.entity.ElectionChoice;
 
 public interface ElectionChoiceRepository extends JpaRepository<ElectionChoice, Long> {
 
